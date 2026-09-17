@@ -12,6 +12,11 @@ on:
     # relógio pontual que o cron local era.
     #   - cron: '30 0 * * 1-6'
   workflow_dispatch:
+    inputs:
+      enviar:
+        description: 'Enviar o e-mail de verdade para a lista (desmarcado = só gera e publica como artifact)'
+        type: boolean
+        default: false
 
 # Uma rodada pendurada não pode encavalar com a do dia seguinte.
 concurrency:
@@ -58,6 +63,8 @@ jobs:
           restore-keys: notas-arquivo-
 
       - name: Gerar e enviar
+        # No disparo agendado 'enviar' vem vazio, então o padrão é enviar de
+        # verdade; a simulação só existe para o disparo manual desmarcado.
         env:
           EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
           EMAIL_PORT: '587'
@@ -74,13 +81,33 @@ jobs:
           TIMEZONE: Asia/Kolkata
         # load_dotenv() não sobrescreve o ambiente e não há .env no runner,
         # então estas variáveis são a única fonte de configuração aqui.
-        run: python generate_daily_notes.py
+        run: |
+          if [ "${{ github.event.inputs.enviar }}" = "false" ]; then
+            echo "::notice::Modo simulação - scraping e síntese rodam, e-mail NÃO é enviado"
+            python - <<'PY'
+          from app.core.date_utils import get_target_dates
+          from generate_daily_notes import generate_daily_notes
+          import sys
+
+          datas = get_target_dates()
+          print(f"Datas-alvo: {datas}")
+          html = generate_daily_notes(datas)
+          if not html:
+              print("Nenhum documento encontrado ou falha na geração")
+              sys.exit(1)
+          print(f"HTML gerado: {len(html)} caracteres - e-mail suprimido")
+          PY
+          else
+            python generate_daily_notes.py
+          fi
 
       - name: Publicar logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: logs-${{ github.run_id }}
-          path: logs/*.log
+          path: |
+            logs/*.log
+            logs/arquivo/*.html
           if-no-files-found: ignore
           retention-days: 14
