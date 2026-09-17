@@ -1,14 +1,16 @@
 name: Notas do Dia
 
 on:
-  schedule:
+  # Agendamento desligado em 2026-09-17 (viagem) - por ora só disparo manual.
+  # Para religar, descomente as duas linhas abaixo.
+  # schedule:
     # 00:30 UTC = 06:00 IST, mesmo horário do cron local que isto substitui.
     # Segunda a sábado: às 00:30 UTC o dia da semana em IST é o mesmo, então o
     # 1-6 daqui casa com o "pula domingo" que generate_and_send() aplica em IST.
     # O agendador do GitHub atrasa com frequência (10-30min) e ocasionalmente
     # pula execuções - para um boletim diário isso é tolerável, mas não é o
     # relógio pontual que o cron local era.
-    - cron: '30 0 * * 1-6'
+    #   - cron: '30 0 * * 1-6'
   workflow_dispatch:
 
 # Uma rodada pendurada não pode encavalar com a do dia seguinte.
