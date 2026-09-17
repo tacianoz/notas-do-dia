@@ -14,9 +14,36 @@ from datetime import datetime
 import pytz
 import os
 import glob
+import signal
 
 
 PREVIOUS_SYNTHESES_WINDOW = 3
+
+# Teto de tempo para uma execução inteira. Uma rodada normal leva ~2min; o pior
+# caso com os retries do Selenium não passa de ~6min.
+JOB_TIMEOUT_SECONDS = int(os.getenv('JOB_TIMEOUT_SECONDS', 15 * 60))
+
+
+class JobTimeout(BaseException):
+    """Estouro do tempo máximo de execução.
+
+    Herda de BaseException de propósito: os `except Exception` espalhados pelos
+    scrapers engoliriam o timeout e o job seguiria como se nada tivesse acontecido.
+    """
+
+
+def _armar_watchdog(seconds: int) -> None:
+    """Interrompe a execução se ela passar de `seconds`.
+
+    Sem isso, uma chamada de rede pendurada trava o processo indefinidamente: não
+    gera erro, não gera e-mail, e ainda empilha com o disparo do cron do dia
+    seguinte. Melhor falhar alto e cedo.
+    """
+    def _estourou(signum, frame):
+        raise JobTimeout(f"Execução passou de {seconds}s sem terminar - abortando")
+
+    signal.signal(signal.SIGALRM, _estourou)
+    signal.alarm(seconds)
 
 
 def _format_dates_header(dates_part: str) -> str:
@@ -195,7 +222,15 @@ def generate_and_send():
 
 
 if __name__ == "__main__":
-    success = generate_and_send()
+    _armar_watchdog(JOB_TIMEOUT_SECONDS)
+    try:
+        success = generate_and_send()
+    except JobTimeout as e:
+        logger.error(f"⏱️ {e}")
+        success = False
+    finally:
+        signal.alarm(0)
+
     if success:
         print("\n✅ Notas do Dia gerado e enviado com sucesso!")
     else:

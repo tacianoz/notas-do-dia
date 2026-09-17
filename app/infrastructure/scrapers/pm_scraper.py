@@ -13,6 +13,33 @@ import time
 import re
 
 
+# (connect, read) em segundos para o download do ChromeDriver. O read timeout é o
+# que importa: sem ele um socket que morre no meio do download deixa o processo
+# pendurado indefinidamente.
+DRIVER_DOWNLOAD_TIMEOUT = (10, 60)
+
+
+def _chromedriver_manager_com_timeout():
+    """ChromeDriverManager cujo download tem timeout.
+
+    O WDMHttpClient padrão do webdriver-manager chama requests.get() sem timeout.
+    Se a conexão morre no meio do caminho — VPN caindo, por exemplo — o socket fica
+    ESTABLISHED sem nunca receber dado nem RST, e o read bloqueia pra sempre. Com
+    timeout isso vira exceção, que o retry de _fetch_with_selenium trata.
+    """
+    from webdriver_manager.chrome import ChromeDriverManager
+    from webdriver_manager.core.download_manager import WDMDownloadManager
+    from webdriver_manager.core.http import WDMHttpClient
+
+    class _HttpClientComTimeout(WDMHttpClient):
+        def get(self, url, **kwargs):
+            kwargs.setdefault('timeout', DRIVER_DOWNLOAD_TIMEOUT)
+            return super().get(url, **kwargs)
+
+    # O mesmo http client atende à consulta de versão e ao download do binário.
+    return ChromeDriverManager(download_manager=WDMDownloadManager(_HttpClientComTimeout()))
+
+
 class PMScraper(BaseScraper):
     """Scraper for Prime Minister Releases"""
     
@@ -326,9 +353,8 @@ class PMScraper(BaseScraper):
                 logger.info("Tentando usar webdriver-manager...")
                 # Fallback: usar webdriver-manager
                 try:
-                    from webdriver_manager.chrome import ChromeDriverManager
                     logger.info("Usando webdriver-manager para baixar ChromeDriver")
-                    service = Service(ChromeDriverManager().install())
+                    service = Service(_chromedriver_manager_com_timeout().install())
                     driver = webdriver.Chrome(service=service, options=chrome_options)
                     logger.info("✅ ChromeDriver inicializado via webdriver-manager!")
                 except Exception as e:
