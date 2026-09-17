@@ -41,6 +41,22 @@ class BaseScraper:
         self.session = requests.Session()
         self.session.headers.update(self.HEADERS)
         self.session.max_redirects = 5
+        # Motivo da última falha de fetch_page, para o chamador poder descrever
+        # por que a fonte não respondeu.
+        self.ultimo_erro: Optional[str] = None
+        # Fontes que não puderam ser consultadas nesta execução.
+        self.falhas_de_fonte: List[str] = []
+
+    def registrar_falha_de_fonte(self, fonte: str) -> None:
+        """Marca uma fonte como não consultada nesta execução.
+
+        Uma listagem que não carrega e uma listagem sem publicações na data são
+        indistinguíveis pela lista vazia que as duas devolvem - e a diferença
+        importa: a segunda é um dia fraco, a primeira é um boletim capenga.
+        """
+        motivo = self.ultimo_erro or 'motivo desconhecido'
+        self.falhas_de_fonte.append(f"{fonte} ({motivo})")
+        logger.error(f"❌ Fonte não consultada: {fonte} - {motivo}")
     
     def get_selenium_options(self):
         """Retorna opções configuradas para Selenium Chrome"""
@@ -86,6 +102,7 @@ class BaseScraper:
                     headers=headers,
                 )
                 resp.raise_for_status()
+                self.ultimo_erro = None
                 return resp.text
 
             except requests.exceptions.Timeout:
@@ -93,12 +110,14 @@ class BaseScraper:
                 logger.warning(f"Timeout ao acessar {url} (tentativa {attempt}/{self.retry_attempts})")
                 if attempt >= self.retry_attempts:
                     logger.error(f"Falha ao acessar {url} após {self.retry_attempts} tentativas (timeout)")
+                    self.ultimo_erro = f"timeout após {self.retry_attempts} tentativas"
                     return None
 
             except requests.exceptions.HTTPError as e:
                 status = e.response.status_code
                 if status == 404:
                     logger.error(f"404 - Página não encontrada: {url}")
+                    self.ultimo_erro = "404 - página não encontrada"
                     return None
                 # 5xx e bloqueios transitórios (403 Forbidden / 429 Too Many Requests)
                 # são reprocessados com backoff — o WAF do MEA costuma bloquear de
@@ -108,9 +127,11 @@ class BaseScraper:
                     logger.warning(f"Erro {status} ao acessar {url} (tentativa {attempt}/{self.retry_attempts})")
                     if attempt >= self.retry_attempts:
                         logger.error(f"Falha ao acessar {url} após {self.retry_attempts} tentativas (erro {status})")
+                        self.ultimo_erro = f"HTTP {status} após {self.retry_attempts} tentativas"
                         return None
                 else:
                     logger.error(f"Erro HTTP {status} ao acessar {url}: {e}")
+                    self.ultimo_erro = f"HTTP {status}"
                     return None
 
             except requests.exceptions.TooManyRedirects as e:
@@ -121,6 +142,7 @@ class BaseScraper:
                     logger.info(f"URL final após redirects: {resp.headers.get('Location', url)}")
                 except:
                     pass
+                self.ultimo_erro = "muitos redirects"
                 return None
             except Exception as e:
                 attempt += 1
@@ -128,10 +150,12 @@ class BaseScraper:
                 # Verificar se é erro de redirects
                 if "redirect" in error_str.lower() or "Exceeded" in error_str:
                     logger.warning(f"Problema de redirects ao acessar {url}: {e}")
+                    self.ultimo_erro = "problema de redirects"
                     return None
                 logger.warning(f"Erro ao acessar {url} (tentativa {attempt}/{self.retry_attempts}): {e}")
                 if attempt >= self.retry_attempts:
                     logger.error(f"Falha ao acessar {url} após {self.retry_attempts} tentativas: {e}")
+                    self.ultimo_erro = f"{type(e).__name__}: {e}"
                     return None
         
         return None

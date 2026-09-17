@@ -152,6 +152,7 @@ class MEAScraper(BaseScraper):
         logger.info(f"Buscando {tipo} para datas: {target_dates}")
         html = self._fetch_listing_html(MEA_PUBLICATION_IDS[tipo])
         if not html:
+            self.registrar_falha_de_fonte(tipo)
             return []
 
         docs = self._parse_listing(html, tipo, target_dates)

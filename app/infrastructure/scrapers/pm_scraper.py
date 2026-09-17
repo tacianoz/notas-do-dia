@@ -550,6 +550,8 @@ class PMScraper(BaseScraper):
             docs = self._fetch_with_selenium(target_dates)
         except Exception as e:
             logger.error(f"Erro ao usar Selenium para PM scraper: {e}")
+            self.ultimo_erro = f"{type(e).__name__}: {e}"
+            self.registrar_falha_de_fonte('Prime Minister Releases')
             docs = []
 
         logger.info(f"Encontrados {len(docs)} Prime Minister Releases")

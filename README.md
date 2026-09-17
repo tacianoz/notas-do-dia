@@ -68,6 +68,13 @@ Todos os dias úteis às 6h (horário de Nova Délhi), o sistema coleta os comun
 ```bash
 git clone https://github.com/tacianoz/notas-do-dia.git
 cd notas-do-dia
+./rodar.sh --simular
+```
+
+O `rodar.sh` cria o venv, instala as dependências e copia o `.env` na primeira
+execução — preencha as credenciais e rode de novo. Para fazer os passos à mão:
+
+```bash
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -92,10 +99,32 @@ Edite o `.env` com suas credenciais:
 ### Linha de comando
 
 ```bash
-python generate_daily_notes.py
+./rodar.sh              # gera e envia por e-mail
+./rodar.sh --simular    # gera sem enviar, salva em logs/arquivo/
 ```
 
-Gera o boletim do dia útil mais recente e envia por e-mail.
+Gera o boletim do dia útil mais recente. Antes de começar, o script confere o
+acesso às fontes e avisa se elas estiverem bloqueadas — ver *Fontes bloqueadas*
+abaixo. Para rodar sem o wrapper: `python generate_daily_notes.py`.
+
+### Fontes bloqueadas
+
+O site do MEA responde **403** para IPs de datacenter — o que inclui VPNs
+comerciais e runners de CI. Na prática o app precisa rodar de uma conexão
+residencial; tentativas via GitHub Actions falham em todas as seções do MEA,
+enquanto o PIB passa normalmente.
+
+Quando alguma fonte não responde, a execução **aborta sem enviar e-mail**, em
+vez de publicar uma edição à qual falta a fonte principal. O log diz quais
+fontes caíram e por quê:
+
+```
+Abortando: 3 de 4 fontes não responderam - MEA - Press Releases (HTTP 403 ...)
+Nenhum e-mail foi enviado.
+```
+
+Uma seção que carrega e volta com zero publicações **não** é falha: é um dia sem
+notícia, e o boletim sai normalmente.
 
 ### API web
 
@@ -113,8 +142,11 @@ python main.py
 ### Agendamento via cron
 
 ```cron
-0 6 * * 1-6 cd /caminho/notas-do-dia && venv/bin/python generate_daily_notes.py >> logs/cron.log 2>&1
+0 6 * * 1-6 cd /caminho/notas-do-dia && ./rodar.sh >> logs/cron.log 2>&1
 ```
+
+Execução agendada em nuvem (GitHub Actions e afins) não funciona por causa do
+bloqueio do MEA descrito acima.
 
 ---
 

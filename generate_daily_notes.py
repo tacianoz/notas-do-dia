@@ -19,6 +19,9 @@ import signal
 
 PREVIOUS_SYNTHESES_WINDOW = 3
 
+# PIB + as três seções do MEA. Só serve para a mensagem de erro do guard.
+TOTAL_DE_FONTES = 4
+
 # Teto de tempo para uma execução inteira. Uma rodada normal leva ~2min; o pior
 # caso com os retries do Selenium não passa de ~6min.
 JOB_TIMEOUT_SECONDS = int(os.getenv('JOB_TIMEOUT_SECONDS', 15 * 60))
@@ -123,6 +126,23 @@ def generate_daily_notes(target_dates=None):
 
         logger.info("Buscando MEA Media Briefings...")
         all_docs.extend(mea_scraper.get_media_briefings(target_dates))
+
+        # Guard: uma fonte que não respondeu produz edição capenga em silêncio.
+        # Foi exatamente assim que uma rodada saiu verde com o MEA inteiro
+        # bloqueado por WAF, sobrando só o PIB. Melhor não publicar nada do que
+        # publicar um boletim ao qual falta a fonte principal.
+        falhas = pm_scraper.falhas_de_fonte + mea_scraper.falhas_de_fonte
+        if falhas:
+            logger.error(
+                "Abortando: {} de {} fontes não responderam - {}".format(
+                    len(falhas), TOTAL_DE_FONTES, '; '.join(falhas)
+                )
+            )
+            logger.error(
+                "Nenhum e-mail foi enviado. Rode de novo quando as fontes voltarem "
+                "(de rede bloqueada - VPN, IP de datacenter - isso não resolve sozinho)."
+            )
+            return None
 
         if not all_docs:
             logger.info("Nenhum documento encontrado para as datas especificadas.")
